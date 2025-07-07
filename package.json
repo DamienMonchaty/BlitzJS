@@ -1,0 +1,57 @@
+{
+  "name": "@damienmonchaty/blitzjs",
+  "version": "1.0.0",
+  "description": "Ultra-fast HTTP framework with Elysia-like API built on uWebSockets.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "publish:dry": "npm publish --dry-run",
+    "publish:public": "npm publish --access=public"
+  },
+  "keywords": [
+    "http",
+    "framework",
+    "fast",
+    "web",
+    "server",
+    "api",
+    "typescript",
+    "uwebsockets",
+    "elysia",
+    "performance"
+  ],
+  "author": "Formation",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/formation/blitzjs.git"
+  },
+  "homepage": "https://github.com/formation/blitzjs#readme",
+  "bugs": {
+    "url": "https://github.com/formation/blitzjs/issues"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "peerDependencies": {
+    "uWebSockets.js": ">=20.52.0"
+  },
+  "dependencies": {
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.52.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}

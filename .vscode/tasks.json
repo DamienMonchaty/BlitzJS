@@ -1,0 +1,19 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Server",
+      "type": "shell",
+      "command": "npm start",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Debug Server",
+      "type": "shell",
+      "command": "npm run debug",
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

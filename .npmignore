@@ -1,0 +1,41 @@
+# Source files
+src/
+example/
+scripts/
+logs/
+
+# Development files
+.vscode/
+.github/
+tsconfig.json
+*.log
+
+# Node modules
+node_modules/
+
+# Development dependencies
+autocannon/
+benchmark/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+*.swp
+*.swo
+*~
+
+# Test files
+test/
+tests/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# Documentation source
+docs/src/
+
+# Build artifacts (keep only dist)
+!dist/
