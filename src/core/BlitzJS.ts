@@ -27,16 +27,12 @@ export type HttpMethod = 'get' | 'post' | 'put' | 'delete' | 'patch' | 'options'
  * Contains request/response objects and extracted parameters
  */
 export interface RouteContext {
-  // /** uWebSockets.js request object */
-  // req: HttpRequest;
-  // /** uWebSockets.js response object */
-  // res: HttpResponse;
   req: {
     getMethod(): string;
     getUrl(): string;
     getQuery(): string;
     getHeader(name: string): string;
-  }; 
+  };
   /** Essential response methods */
   res: {
     writeStatus(status: string): HttpResponse;
@@ -80,7 +76,7 @@ export type SimpleHandlerFunction = (ctx: RouteContext) => SimpleResponse | Prom
 /** 
  * Union type for both simple responses and handler functions 
  */
-export type SimpleHandler = SimpleResponse | SimpleHandlerFunction;
+export type SimpleHandler = SimpleResponse | SimpleHandlerFunction | RouteHandlerFunction;
 
 /**
  * Configuration options for BlitzJS application
@@ -141,19 +137,19 @@ export class BlitzJS {
   private config: BlitzConfig;
   /** Route prefix for sub-application mounting */
   private prefix: string;
-  
+
   // Runtime Code Generation System (enabled by default for max performance)
   /** Whether runtime code generation is enabled */
   private codeGenEnabled: boolean = true;
   /** Counter for compiled route handlers */
   private routeCompileCount: number = 0;
-  
+
   // 🚀 ULTRA-FAST OPTIMIZATIONS
   /** O(1) static route lookup using HashMap (method:pattern -> Route) */
   private staticRoutes = new Map<string, Route>();
   /** Ultra-compiled router function for maximum performance */
   private compiledRouterFunction: Function | null = null;
-  
+
   // 🔥 TEMPLATE PATTERN - Ultra-optimized templates without closures
   /** Cache for compiled template handlers to avoid recompilation */
   private static readonly TEMPLATE_CACHE = new Map<string, Function>();
@@ -172,9 +168,9 @@ export class BlitzJS {
       host: '0.0.0.0',
       ...config
     };
-    
+
     this.prefix = config.prefix || '';
-    
+
     // Initialize uWebSockets.js app only if this is not a sub-app
     if (!config.prefix) {
       this.app = config.ssl ? SSLApp(config.ssl) : App();
@@ -217,7 +213,7 @@ export class BlitzJS {
     for (const middleware of subApp.middlewares) {
       this.middlewares.push(middleware);
     }
-    
+
     // Add sub-app's routes with prefix transformation
     for (const route of subApp.routes) {
       const prefixedPattern = this.combinePaths(subApp.prefix, route.pattern);
@@ -236,14 +232,14 @@ export class BlitzJS {
    */
   private combinePaths(prefix: string, path: string): string {
     if (!prefix) return path;
-    
+
     // Ensure prefix starts with / and doesn't end with /
     const cleanPrefix = prefix.startsWith('/') ? prefix : '/' + prefix;
     const normalizedPrefix = cleanPrefix.endsWith('/') ? cleanPrefix.slice(0, -1) : cleanPrefix;
-    
+
     // Ensure path starts with /
     const cleanPath = path.startsWith('/') ? path : '/' + path;
-    
+
     return normalizedPrefix + cleanPath;
   }
 
@@ -345,14 +341,14 @@ export class BlitzJS {
     if (this.prefix) {
       throw new Error('Cannot call listen() on a sub-app with prefix. Use listen() on the main app.');
     }
-    
+
     const serverPort = port || this.config.port!;
-    
+
     this.app.listen(this.config.host!, serverPort, (token) => {
       if (token) {
         // 🚀 FINAL PHASE: Compile ultra-fast router for maximum performance
         this.compileUltraFastRouter();
-        
+
         if (callback) callback(token);
       } else {
         console.error(`❌ Failed to listen on port ${serverPort}`);
@@ -386,7 +382,7 @@ export class BlitzJS {
    */
   private addRoute(method: HttpMethod, pattern: string, handler: RouteHandlerFunction, originalHandler?: SimpleHandler | RouteHandlerFunction): void {
     const { regex, paramNames, isStatic } = this.compilePattern(pattern);
-    
+
     // Create route with information for code generation
     const route: Route = {
       method,
@@ -403,7 +399,7 @@ export class BlitzJS {
     if (this.codeGenEnabled && !this.prefix) {
       route.compiledHandler = this.compileOptimizedHandler(route);
     }
-    
+
     // 🔥 ULTRA-FAST ROUTING - Store in appropriate structure
     if (isStatic) {
       const key = `${method.toUpperCase()}:${pattern}`;
@@ -425,7 +421,7 @@ export class BlitzJS {
   private compilePattern(pattern: string): { regex: RegExp; paramNames: string[]; isStatic: boolean } {
     const paramNames: string[] = [];
     const isStatic = !pattern.includes(':') && !pattern.includes('*');
-    
+
     if (isStatic) {
       // Static route - no need for expensive regex
       return {
@@ -434,7 +430,7 @@ export class BlitzJS {
         isStatic: true
       };
     }
-    
+
     // Dynamic route - ultra-optimized regex
     let regexPattern = pattern
       .replace(/:([^/]+)/g, (match, paramName) => {
@@ -443,9 +439,9 @@ export class BlitzJS {
       })
       .replace(/\*/g, '.*')
       .replace(/\//g, '\\/');  // Escape slashes AFTER processing params
-    
+
     const regex = new RegExp(`^${regexPattern}$`);
-    
+
     return { regex, paramNames, isStatic: false };
   }
 
@@ -461,27 +457,27 @@ export class BlitzJS {
     this.app.get('/*', (res: HttpResponse, req: HttpRequest) => {
       this.handleUltraFastRequest(req, res);
     });
-    
+
     this.app.post('/*', (res: HttpResponse, req: HttpRequest) => {
       this.handleUltraFastRequest(req, res);
     });
-    
+
     this.app.put('/*', (res: HttpResponse, req: HttpRequest) => {
       this.handleUltraFastRequest(req, res);
     });
-    
+
     this.app.del('/*', (res: HttpResponse, req: HttpRequest) => {
       this.handleUltraFastRequest(req, res);
     });
-    
+
     this.app.patch('/*', (res: HttpResponse, req: HttpRequest) => {
       this.handleUltraFastRequest(req, res);
     });
-    
+
     this.app.options('/*', (res: HttpResponse, req: HttpRequest) => {
       this.handleUltraFastRequest(req, res);
     });
-    
+
     this.app.head('/*', (res: HttpResponse, req: HttpRequest) => {
       this.handleUltraFastRequest(req, res);
     });
@@ -500,6 +496,39 @@ export class BlitzJS {
    * - Functions -> executed and result auto-serialized
    */
   private createSimpleHandler(handler: SimpleHandler): RouteHandlerFunction {
+    if (typeof handler === 'function') {
+      const handlerLength = handler.length;
+      if (handlerLength === 1) {
+        const testResult = handler.toString();
+        if (testResult.includes('ctx.res.') || testResult.includes('context.res.')) {
+          return handler as RouteHandlerFunction;
+        }
+      }
+
+      return async (ctx: RouteContext) => {
+        try {
+          const result = await (handler as SimpleHandlerFunction)(ctx);
+
+          if (result !== undefined) {
+            // Auto-handle return values based on type
+            if (typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean' || result === null) {
+              ctx.res.writeHeader('Content-Type', 'text/plain');
+              ctx.res.end(String(result));
+            } else if (typeof result === 'object') {
+              ctx.res.writeHeader('Content-Type', 'application/json');
+              ctx.res.end(JSON.stringify(result));
+            }
+          }
+        } catch (error) {
+          console.error('Handler error:', error);
+          if (!ctx.res.aborted) {
+            ctx.res.writeStatus('500 Internal Server Error');
+            ctx.res.writeHeader('Content-Type', 'application/json');
+            ctx.res.end(JSON.stringify({ error: 'Internal Server Error' }));
+          }
+        }
+      };
+    }
     if (typeof handler === 'string' || typeof handler === 'number' || typeof handler === 'boolean' || handler === null) {
       // Simple primitive response - pre-compile for performance
       return async (ctx: RouteContext) => {
@@ -507,7 +536,7 @@ export class BlitzJS {
         ctx.res.end(String(handler));
       };
     }
-    
+
     if (typeof handler === 'object' && handler !== null) {
       // Simple object response (JSON) - pre-serialize for performance
       return async (ctx: RouteContext) => {
@@ -515,13 +544,13 @@ export class BlitzJS {
         ctx.res.end(JSON.stringify(handler));
       };
     }
-    
+
     if (typeof handler === 'function') {
       // Function handler with return value support
       return async (ctx: RouteContext) => {
         try {
           const result = await (handler as SimpleHandlerFunction)(ctx);
-          
+
           if (result !== undefined) {
             // Auto-handle return values based on type
             if (typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean' || result === null) {
@@ -633,16 +662,16 @@ export class BlitzJS {
             for (let i = 0; i < precomputedHeaders.length; i += 2) {
               res.writeHeader(precomputedHeaders[i], precomputedHeaders[i + 1]);
             }
-            
+
             const context = ctx || {
               req, res,
               params: {}, // ✅ Reusable empty object
               query: {},
               body: undefined
             };
-            
+
             const result = await originalHandler(context);
-            
+
             if (result !== undefined && !res.aborted) {
               if (typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean' || result === null) {
                 res.writeHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -667,16 +696,16 @@ export class BlitzJS {
             for (let i = 0; i < precomputedHeaders.length; i += 2) {
               res.writeHeader(precomputedHeaders[i], precomputedHeaders[i + 1]);
             }
-            
+
             const context = ctx || {
               req, res,
               params: extractedParams || {},
               query: {},
               body: undefined
             };
-            
+
             const result = await originalHandler(context);
-            
+
             if (result !== undefined && !res.aborted) {
               if (typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean' || result === null) {
                 res.writeHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -712,7 +741,7 @@ export class BlitzJS {
    */
   private compileOptimizedHandler(route: Route): Function {
     const routeKey = `${route.method}_${route.pattern}`;
-    
+
     // Check template cache first
     if (BlitzJS.TEMPLATE_CACHE.has(routeKey)) {
       return BlitzJS.TEMPLATE_CACHE.get(routeKey)!;
@@ -748,7 +777,7 @@ export class BlitzJS {
     // Cache the compiled template for future use
     BlitzJS.TEMPLATE_CACHE.set(routeKey, compiledHandler);
     this.routeCompileCount++;
-    
+
     return compiledHandler;
   }
 
@@ -763,7 +792,7 @@ export class BlitzJS {
    */
   private precomputeOptimizedHeaders(route: Route): string[] {
     const headers: string[] = [];
-    
+
     if (typeof route.originalHandler === 'string') {
       headers.push('Content-Type', 'text/plain; charset=utf-8');
     } else if (typeof route.originalHandler === 'object' && route.originalHandler !== null) {
@@ -771,9 +800,9 @@ export class BlitzJS {
     } else {
       headers.push('Content-Type', 'application/json; charset=utf-8');
     }
-    
+
     headers.push('X-Powered-By', 'BlitzJS-Template-Optimized');
-    
+
     return headers;
   }
 
@@ -791,7 +820,7 @@ export class BlitzJS {
       try {
         const fs = require('fs');
         const mimeType = BlitzJS.getMimeType(path);
-        
+
         if (!fs.existsSync(path)) {
           ctx.res.writeStatus('404 Not Found');
           ctx.res.end('File not found');
@@ -800,7 +829,7 @@ export class BlitzJS {
 
         const stats = fs.statSync(path);
         const fileContent = fs.readFileSync(path);
-        
+
         ctx.res.writeHeader('Content-Type', mimeType);
         ctx.res.writeHeader('Content-Length', stats.size.toString());
         ctx.res.end(fileContent);
@@ -857,13 +886,13 @@ export class BlitzJS {
     // Simplified version without dynamic code generation to avoid errors
     this.compiledRouterFunction = (method: string, url: string, staticRoutes: Map<string, Route>, dynamicRoutes: Route[]) => {
       const key = method.toUpperCase() + ':' + url;
-      
+
       // Phase 1: Static routes (O(1) - ultra fast HashMap lookup)
       const staticRoute = staticRoutes.get(key);
       if (staticRoute && staticRoute.compiledHandler) {
         return { handler: staticRoute.compiledHandler, params: {} };
       }
-      
+
       // Phase 2: Dynamic routes (optimized regex matching)
       for (const route of dynamicRoutes) {
         if (route.method === method.toLowerCase()) {
@@ -877,7 +906,7 @@ export class BlitzJS {
           }
         }
       }
-      
+
       return null;
     };
   }
@@ -902,7 +931,7 @@ export class BlitzJS {
     const url = req.getUrl(); // Path sans query string
     const queryString = req.getQuery(); // Query string seulement
     const fullUrl = queryString ? `${url}?${queryString}` : url;
-    
+
     // Capturer les headers avant parsing du body
     const contentType = req.getHeader('content-type') || '';
 
@@ -923,12 +952,12 @@ export class BlitzJS {
       // Phase 1: Utiliser le router ultra-compilé
       if (this.compiledRouterFunction) {
         const result = this.compiledRouterFunction(
-          method, 
+          method,
           url, // Use path without query for routing
-          this.staticRoutes, 
+          this.staticRoutes,
           this.routes.filter(r => !r.isStatic)
         );
-        
+
         if (result && result.handler) {
           // Verify handler is actually a function
           if (typeof result.handler === 'function') {
@@ -958,10 +987,10 @@ export class BlitzJS {
           }
         }
       }
-      
+
       // Phase 2: Fallback vers routing standard
       await this.handleRequestFallback(req, res, method, url, body, query);
-      
+
     } catch (error) {
       console.error('🚨 Ultra-fast handler error:', error);
       if (!res.aborted) {
@@ -992,7 +1021,7 @@ export class BlitzJS {
           route.paramNames.forEach((name, index) => {
             params[name] = match[index + 1] || '';
           });
-          
+
           const ctx = {
             req, res,
             params,
@@ -1004,7 +1033,7 @@ export class BlitzJS {
         }
       }
     }
-    
+
     // 404 si aucune route trouvée
     if (!res.aborted) {
       res.writeStatus('404 Not Found');
@@ -1018,14 +1047,14 @@ export class BlitzJS {
   private async parseBody(res: HttpResponse, req: HttpRequest, contentType: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
       let buffer: Buffer[] = [];
-      
+
       res.onData((chunk: ArrayBuffer, isLast: boolean) => {
         buffer.push(Buffer.from(chunk));
-        
+
         if (isLast) {
           try {
             const bodyString = Buffer.concat(buffer).toString();
-            
+
             // Try to parse as JSON first
             if (contentType.includes('application/json')) {
               resolve(JSON.parse(bodyString));
@@ -1047,7 +1076,7 @@ export class BlitzJS {
           }
         }
       });
-      
+
       res.onAborted(() => {
         reject(new Error('Request aborted'));
       });
@@ -1060,11 +1089,11 @@ export class BlitzJS {
   private parseQueryString(queryString: string): Record<string, string> {
     const params = new URLSearchParams(queryString);
     const result: Record<string, string> = {};
-    
+
     for (const [key, value] of params) {
       result[key] = value;
     }
-    
+
     return result;
   }
 }
