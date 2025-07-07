@@ -8,6 +8,10 @@ export interface RouteContext {
   params: Record<string, string>;
   query: Record<string, string>;
   body?: unknown;
+  // Valeurs capturées avant await (sécurisées)
+  method?: string;
+  url?: string;
+  contentType?: string;
 }
 
 export type RouteHandlerFunction = (ctx: RouteContext) => void | Promise<void>;
@@ -262,33 +266,6 @@ export class BlitzJS {
   }
 
   /**
-   * Find a matching route for the given method and URL
-   */
-  private findRoute(method: HttpMethod, url: string): Route | null {
-    // Optimize dynamic route matching with RouteTrie
-    const urlSegments = url.split('/').filter(Boolean);
-    const routeTrie = this.buildRouteTrie();
-
-    const { handler } = routeTrie.find(urlSegments, method) || { handler: null };
-
-    return this.routes.find(route => route.handler === handler) || null;
-  }
-
-  /**
-   * Build a RouteTrie from the current routes
-   */
-  private buildRouteTrie(): RouteTrie {
-    const routeTrie = new RouteTrie();
-    
-    for (const route of this.routes) {
-      const segments = route.pattern.split('/').filter(Boolean);
-      routeTrie.insert(segments, route.handler, route.method);
-    }
-    
-    return routeTrie;
-  }
-
-  /**
    * Compile a route pattern with ultra-fast optimization detection
    */
   private compilePattern(pattern: string): { regex: RegExp; paramNames: string[]; isStatic: boolean } {
@@ -469,21 +446,21 @@ export class BlitzJS {
     ): Function {
       if (!hasParams) {
         // Template pour routes statiques
-        return async function templateStaticFunctionHandler(req: any, res: any) {
+        return async function templateStaticFunctionHandler(req: any, res: any, ctx?: RouteContext) {
           try {
             // Headers pré-optimisés
             for (let i = 0; i < precomputedHeaders.length; i += 2) {
               res.writeHeader(precomputedHeaders[i], precomputedHeaders[i + 1]);
             }
             
-            const ctx = {
+            const context = ctx || {
               req, res,
               params: {}, // ✅ Objet vide réutilisable
               query: {},
               body: undefined
             };
             
-            const result = await originalHandler(ctx);
+            const result = await originalHandler(context);
             
             if (result !== undefined && !res.aborted) {
               if (typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean' || result === null) {
@@ -503,21 +480,21 @@ export class BlitzJS {
         };
       } else {
         // Template pour routes dynamiques
-        return async function templateDynamicFunctionHandler(req: any, res: any, url?: string, extractedParams?: Record<string, string>) {
+        return async function templateDynamicFunctionHandler(req: any, res: any, url?: string, extractedParams?: Record<string, string>, ctx?: RouteContext) {
           try {
             // Headers pré-optimisés
             for (let i = 0; i < precomputedHeaders.length; i += 2) {
               res.writeHeader(precomputedHeaders[i], precomputedHeaders[i + 1]);
             }
             
-            const ctx = {
+            const context = ctx || {
               req, res,
               params: extractedParams || {},
               query: {},
               body: undefined
             };
             
-            const result = await originalHandler(ctx);
+            const result = await originalHandler(context);
             
             if (result !== undefined && !res.aborted) {
               if (typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean' || result === null) {
@@ -697,16 +674,34 @@ export class BlitzJS {
   /**
    * 🔥 ULTRA-FAST REQUEST HANDLER - Performance maximale O(1) pour routes statiques
    */
-  private handleUltraFastRequest = (req: any, res: any): void => {
+  private handleUltraFastRequest = async (req: any, res: any): Promise<void> => {
     const method = req.getMethod().toUpperCase();
-    const url = req.getUrl();
+    const url = req.getUrl(); // Path sans query string
+    const queryString = req.getQuery(); // Query string seulement
+    const fullUrl = queryString ? `${url}?${queryString}` : url;
+    
+    // Capturer les headers avant parsing du body
+    const contentType = req.getHeader('content-type') || '';
 
     try {
+      // Parse body for POST/PUT/PATCH requests
+      let body: unknown = undefined;
+      if (['POST', 'PUT', 'PATCH'].includes(method)) {
+        try {
+          body = await this.parseBody(res, req, contentType);
+        } catch (error) {
+          console.error('Body parsing error:', error);
+        }
+      }
+
+      // Parse query parameters from query string
+      const query = queryString ? this.parseQueryString(queryString) : {};
+
       // Phase 1: Utiliser le router ultra-compilé
       if (this.compiledRouterFunction) {
         const result = this.compiledRouterFunction(
           method, 
-          url, 
+          url, // Use path without query for routing
           this.staticRoutes, 
           this.routes.filter(r => !r.isStatic)
         );
@@ -714,13 +709,25 @@ export class BlitzJS {
         if (result && result.handler) {
           // Vérifier que le handler est bien une fonction
           if (typeof result.handler === 'function') {
+            // Créer le contexte avec body et query
+            const ctx = {
+              req, res,
+              params: result.params || {},
+              query,
+              body,
+              // Ajouter les valeurs capturées avant await
+              method: method,
+              url: fullUrl, // URL complète avec query string
+              contentType: contentType
+            };
+
             // Exécuter le handler compilé ultra-rapide
             if (result.params && Object.keys(result.params).length > 0) {
-              // Route dynamique - passer les paramètres
-              result.handler(req, res, url, result.params);
+              // Route dynamique - passer les paramètres et le contexte
+              await result.handler(req, res, url, result.params, ctx);
             } else {
-              // Route statique - exécution directe
-              result.handler(req, res);
+              // Route statique - exécution directe avec contexte
+              await result.handler(req, res, ctx);
             }
             return;
           } else {
@@ -730,7 +737,7 @@ export class BlitzJS {
       }
       
       // Phase 2: Fallback vers routing standard
-      this.handleRequestFallback(req, res, method, url);
+      await this.handleRequestFallback(req, res, method, url, body, query);
       
     } catch (error) {
       console.error('🚨 Ultra-fast handler error:', error);
@@ -744,16 +751,90 @@ export class BlitzJS {
   /**
    * Fallback handler pour cas exceptionnels
    */
-  private handleRequestFallback(req: any, res: any, method: string, url: string): void {
-    const route = this.findRoute(method as HttpMethod, url);
-    if (route && route.compiledHandler) {
-      route.compiledHandler(req, res);
-    } else {
-      if (!res.aborted) {
-        res.writeStatus('404 Not Found');
-        res.end('Not Found');
+  private async handleRequestFallback(req: any, res: any, method: string, url: string, body?: unknown, query?: Record<string, string>): Promise<void> {
+    // Simple fallback - chercher dans les routes dynamiques
+    for (const route of this.routes) {
+      if (route.method === method.toLowerCase() && !route.isStatic) {
+        const match = route.regex.exec(url);
+        if (match && route.compiledHandler) {
+          const params: Record<string, string> = {};
+          route.paramNames.forEach((name, index) => {
+            params[name] = match[index + 1] || '';
+          });
+          
+          const ctx = {
+            req, res,
+            params,
+            query: query || {},
+            body
+          };
+          await route.compiledHandler(req, res, ctx);
+          return;
+        }
       }
     }
+    
+    // 404 si aucune route trouvée
+    if (!res.aborted) {
+      res.writeStatus('404 Not Found');
+      res.end('Not Found');
+    }
+  }
+
+  /**
+   * Parse request body for POST/PUT/PATCH requests
+   */
+  private async parseBody(res: HttpResponse, req: HttpRequest, contentType: string): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      let buffer: Buffer[] = [];
+      
+      res.onData((chunk: ArrayBuffer, isLast: boolean) => {
+        buffer.push(Buffer.from(chunk));
+        
+        if (isLast) {
+          try {
+            const bodyString = Buffer.concat(buffer).toString();
+            
+            // Try to parse as JSON first
+            if (contentType.includes('application/json')) {
+              resolve(JSON.parse(bodyString));
+            } else if (contentType.includes('application/x-www-form-urlencoded')) {
+              // Parse URL encoded data
+              const params = new URLSearchParams(bodyString);
+              const result: Record<string, string> = {};
+              for (const [key, value] of params) {
+                result[key] = value;
+              }
+              resolve(result);
+            } else {
+              // Return as string for other content types
+              resolve(bodyString);
+            }
+          } catch (error) {
+            const bodyString = Buffer.concat(buffer).toString();
+            resolve(bodyString); // Return raw string if parsing fails
+          }
+        }
+      });
+      
+      res.onAborted(() => {
+        reject(new Error('Request aborted'));
+      });
+    });
+  }
+
+  /**
+   * Parse query string (without leading ?)
+   */
+  private parseQueryString(queryString: string): Record<string, string> {
+    const params = new URLSearchParams(queryString);
+    const result: Record<string, string> = {};
+    
+    for (const [key, value] of params) {
+      result[key] = value;
+    }
+    
+    return result;
   }
 }
 
@@ -762,64 +843,4 @@ export class BlitzJS {
  */
 export function Blitz(config?: BlitzConfig): BlitzJS {
   return new BlitzJS(config);
-}
-
-/**
- * RouteTrie - Structure de données optimisée pour les routes dynamiques O(log n)
- */
-class RouteTrie {
-  private children = new Map<string, RouteTrie>();
-  private handler: Function | null = null;
-  private paramName: string | null = null;
-  private isWildcard = false;
-
-  insert(segments: string[], handler: Function, method: string): void {
-    let current: RouteTrie = this;
-    
-    for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i];
-      let key = segment;
-      
-      // Handle parameter segments like :id
-      if (segment.startsWith(':')) {
-        key = '*'; // Use wildcard for parameters
-        current.paramName = segment.slice(1);
-        current.isWildcard = true;
-      }
-      
-      if (!current.children.has(key)) {
-        current.children.set(key, new RouteTrie());
-      }
-      current = current.children.get(key)!;
-    }
-    
-    current.handler = handler;
-  }
-
-  find(segments: string[], method: string): { handler: Function | null; params: Record<string, string> } {
-    let current: RouteTrie = this;
-    const params: Record<string, string> = {};
-    
-    for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i];
-      
-      // Try exact match first
-      if (current.children.has(segment)) {
-        current = current.children.get(segment)!;
-      }
-      // Try wildcard match
-      else if (current.children.has('*')) {
-        current = current.children.get('*')!;
-        if (current.paramName) {
-          params[current.paramName] = segment;
-        }
-      }
-      // No match found
-      else {
-        return { handler: null, params: {} };
-      }
-    }
-    
-    return { handler: current.handler, params };
-  }
 }
