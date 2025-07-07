@@ -1,19 +1,32 @@
 # BlitzJS ⚡
 
-Ultra-fast HTTP framework with Elysia-like API built on uWebSockets.js
+Ultra-fast HTTP framework with simple, intuitive API built on uWebSockets.js
+
+> ⚠️ **Development Status**: BlitzJS is currently in active development. The API may change before the stable release. Not recommended for production use yet.
 
 ## Features
 
 - ⚡ **Lightning Fast** - Built on uWebSockets.js, one of the fastest HTTP servers
-- 🎯 **Elysia-like API** - Clean, chainable syntax inspired by Elysia
+- 🎯 **Simple & Clean API** - Intuitive, chainable syntax for maximum productivity
 - 🔧 **TypeScript First** - Full TypeScript support with excellent type inference  
 - 📦 **Zero Dependencies** - Only uWebSockets.js as peer dependency
 - 🚀 **Auto Response** - Automatic JSON/string response handling
 
 ## Installation
 
+> **Note**: BlitzJS is not yet published on npm. This is a development preview.
+
 ```bash
+# When available on npm (coming soon)
 npm install blitzjs
+```
+
+For now, you can clone and build locally:
+```bash
+git clone <repository-url>
+cd BlitzJS
+npm install
+npm run build
 ```
 
 ## Quick Start
@@ -114,6 +127,8 @@ BlitzJS leverages uWebSockets.js and advanced optimizations to deliver exception
 
 ### 📊 Benchmark Results
 
+> **Note**: These are preliminary benchmarks from development testing. Official benchmarks will be published with the stable release.
+
 Latest performance validation with Template Pattern optimizations:
 
 | Route Type | Req/s | Latency P50 | Optimization |
@@ -165,6 +180,48 @@ const stringTemplate = function(ctx, precomputedResponse, precomputedHeaders) {
 - **Memory Efficiency** - Single template function for all similar handlers
 - **Pre-computed Data** - Responses and headers computed at compile time
 - **Maximum Performance** - Benchmarks show ~69,000 req/s throughput
+
+## Roadmap
+
+### 🚧 In Development
+- [ ] Request body parsing (JSON, form-data, etc.)
+- [ ] Query string parsing
+- [ ] Cookie support
+- [ ] Session management
+- [ ] Static file serving
+- [ ] Error handling middleware
+- [ ] CORS support
+- [ ] Rate limiting
+- [ ] WebSocket support
+
+### 🎯 Planned Features
+- [ ] Plugin system
+- [ ] Request validation
+- [ ] Authentication helpers
+- [ ] Database integrations
+- [ ] OpenAPI/Swagger support
+- [ ] Testing utilities
+- [ ] Performance monitoring
+- [ ] Clustering support
+
+## Contributing
+
+BlitzJS is in active development and we welcome contributions! 
+
+### Development Setup
+```bash
+git clone <repository-url>
+cd BlitzJS
+npm install
+npm run dev
+```
+
+### Areas Where Help is Needed
+- 🧪 **Testing**: Writing comprehensive test suites
+- 📚 **Documentation**: Improving examples and guides  
+- ⚡ **Performance**: Benchmarking and optimization
+- 🔧 **Features**: Implementing roadmap items
+- 🐛 **Bug Reports**: Finding and reporting issues
 
 ## Examples
 
