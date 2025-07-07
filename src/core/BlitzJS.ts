@@ -27,10 +27,24 @@ export type HttpMethod = 'get' | 'post' | 'put' | 'delete' | 'patch' | 'options'
  * Contains request/response objects and extracted parameters
  */
 export interface RouteContext {
-  /** uWebSockets.js request object */
-  req: HttpRequest;
-  /** uWebSockets.js response object */
-  res: HttpResponse;
+  // /** uWebSockets.js request object */
+  // req: HttpRequest;
+  // /** uWebSockets.js response object */
+  // res: HttpResponse;
+  req: {
+    getMethod(): string;
+    getUrl(): string;
+    getQuery(): string;
+    getHeader(name: string): string;
+  }; 
+  /** Essential response methods */
+  res: {
+    writeStatus(status: string): HttpResponse;
+    writeHeader(key: string, value: string): HttpResponse;
+    write(chunk: string): HttpResponse;
+    end(body?: string): HttpResponse;
+    aborted: boolean;
+  };
   /** URL parameters extracted from the route pattern (e.g., :id) */
   params: Record<string, string>;
   /** Query string parameters */
@@ -38,9 +52,9 @@ export interface RouteContext {
   /** Request body (if parsed) */
   body?: unknown;
   // Valeurs capturées avant await (sécurisées)
-  method?: string;
-  url?: string;
-  contentType?: string;
+  // method?: string;
+  // url?: string;
+  // contentType?: string;
 }
 
 /** 
@@ -339,22 +353,6 @@ export class BlitzJS {
         // 🚀 FINAL PHASE: Compile ultra-fast router for maximum performance
         this.compileUltraFastRouter();
         
-        // 🚀 Display ultra-advanced performance statistics
-        const staticCount = this.staticRoutes.size;
-        const dynamicCount = this.routes.filter(r => !r.isStatic).length;
-        const totalRoutes = staticCount + dynamicCount;
-        const compiledRoutes = this.routes.filter(r => r.compiledHandler).length + this.staticRoutes.size;
-        
-        console.log(`🚀 BlitzJS ULTRA-PERFORMANCE MODE running on http://${this.config.host}:${serverPort}`);
-        console.log(`🔥 Router compilation: COMPLETE`);
-        console.log(`⚡ Runtime Code Generation: ENABLED`);
-        console.log(`📊 Ultra-fast router compiled with ${totalRoutes} routes:`);
-        console.log(`   🏃 Static routes: ${staticCount} (O(1) HashMap lookup)`);
-        console.log(`   🎯 Dynamic routes: ${dynamicCount} (optimized regex + parameter extraction)`);
-        console.log(`   ⚡ Compiled handlers: ${compiledRoutes}/${totalRoutes} (${Math.round(compiledRoutes/totalRoutes*100)}%)`);
-        console.log(`   💾 Headers pre-computed: ENABLED`);
-        console.log(`   🎯 Performance target: 500,000+ req/s for static routes`);
-        
         if (callback) callback(token);
       } else {
         console.error(`❌ Failed to listen on port ${serverPort}`);
@@ -410,10 +408,8 @@ export class BlitzJS {
     if (isStatic) {
       const key = `${method.toUpperCase()}:${pattern}`;
       this.staticRoutes.set(key, route);
-      console.log(`⚡ Static route compiled (O(1) lookup): ${key}`);
     } else {
       this.routes.push(route);
-      console.log(`🚀 Dynamic route compiled (optimized regex): ${method} ${pattern}`);
     }
   }
 
@@ -730,7 +726,6 @@ export class BlitzJS {
       const responseBuffer = Buffer.from(route.originalHandler, 'utf8');
       const stringTemplate = BlitzJS.createUltraFastStringTemplate();
       compiledHandler = stringTemplate(responseBuffer, templateHeaders);
-      console.log(`🔥 Template string handler compiled: ${route.method.toUpperCase()} ${route.pattern}`);
     }
     // ⚡ Template JSON Handler (pre-serialized)
     else if (typeof route.originalHandler === 'object' && route.originalHandler !== null) {
@@ -738,19 +733,16 @@ export class BlitzJS {
       const jsonBuffer = Buffer.from(jsonString, 'utf8');
       const jsonTemplate = BlitzJS.createUltraFastJSONTemplate();
       compiledHandler = jsonTemplate(jsonBuffer, templateHeaders);
-      console.log(`🔥 Template JSON handler compiled: ${route.method.toUpperCase()} ${route.pattern}`);
     }
     // ⚡ Template Function Handler (optimized)
     else if (typeof route.originalHandler === 'function') {
       const hasParams = route.paramNames.length > 0;
       const functionTemplate = BlitzJS.createUltraFastFunctionTemplate();
       compiledHandler = functionTemplate(route.originalHandler, templateHeaders, hasParams);
-      console.log(`🔥 Template function handler compiled: ${route.method.toUpperCase()} ${route.pattern}`);
     }
     // Fallback for unknown handler types
     else {
       compiledHandler = route.handler;
-      console.log(`⚠️  Using original handler: ${route.method.toUpperCase()} ${route.pattern}`);
     }
 
     // Cache the compiled template for future use
@@ -888,8 +880,6 @@ export class BlitzJS {
       
       return null;
     };
-    
-    console.log('🔥 Ultra-fast router compiled (simplified version for reliability)');
   }
 
   /**
