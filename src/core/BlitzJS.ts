@@ -1,12 +1,41 @@
+/**
+ * BlitzJS - Ultra-lightweight, high-performance web framework
+ * 
+ * This framework is built on top of uWebSockets.js for maximum performance,
+ * featuring runtime code generation, template patterns, and ultra-fast routing.
+ * 
+ * Key Features:
+ * - Runtime code generation for maximum performance
+ * - O(1) static route lookup using HashMap
+ * - Optimized regex matching for dynamic routes
+ * - Template pattern handlers without closures
+ * - Support for sub-applications with prefix mounting
+ * - Simple and intuitive handler API with auto-serialization
+ * 
+ * Performance targets:
+ * - Minimal memory allocation during request handling
+ * - Pre-compiled headers and response buffers
+ */
+
 import { App, SSLApp, TemplatedApp, HttpRequest, HttpResponse, AppOptions } from 'uWebSockets.js';
 
+/** Supported HTTP methods */
 export type HttpMethod = 'get' | 'post' | 'put' | 'delete' | 'patch' | 'options' | 'head';
 
+/**
+ * Context object passed to route handlers and middlewares
+ * Contains request/response objects and extracted parameters
+ */
 export interface RouteContext {
+  /** uWebSockets.js request object */
   req: HttpRequest;
+  /** uWebSockets.js response object */
   res: HttpResponse;
+  /** URL parameters extracted from the route pattern (e.g., :id) */
   params: Record<string, string>;
+  /** Query string parameters */
   query: Record<string, string>;
+  /** Request body (if parsed) */
   body?: unknown;
   // Valeurs capturées avant await (sécurisées)
   method?: string;
@@ -14,55 +43,115 @@ export interface RouteContext {
   contentType?: string;
 }
 
+/** 
+ * Traditional route handler function that manually manages the response 
+ */
 export type RouteHandlerFunction = (ctx: RouteContext) => void | Promise<void>;
+
+/** 
+ * Middleware function with next() callback for chaining 
+ */
 export type MiddlewareFunction = (ctx: RouteContext, next: () => Promise<void>) => void | Promise<void>;
 
-// Types stricts pour les réponses simples
+/** 
+ * Simple response types that can be automatically serialized 
+ */
 export type SimpleResponse = string | number | boolean | null | Record<string, unknown> | unknown[];
+
+/** 
+ * Simple handler function that returns a value (supports auto-serialization) 
+ */
 export type SimpleHandlerFunction = (ctx: RouteContext) => SimpleResponse | Promise<SimpleResponse>;
+
+/** 
+ * Union type for both simple responses and handler functions 
+ */
 export type SimpleHandler = SimpleResponse | SimpleHandlerFunction;
 
+/**
+ * Configuration options for BlitzJS application
+ */
 export interface BlitzConfig {
+  /** Server port (default: 3000) */
   port?: number;
+  /** Server host (default: '0.0.0.0') */
   host?: string;
+  /** SSL/TLS configuration for HTTPS */
   ssl?: AppOptions;
-  prefix?: string; // Nouveau: support des préfixes
+  /** Prefix for sub-application mounting */
+  prefix?: string;
 }
 
+/**
+ * Internal route structure with optimization metadata
+ */
 interface Route {
+  /** HTTP method for this route */
   method: HttpMethod;
+  /** Original route pattern (e.g., '/users/:id') */
   pattern: string;
+  /** Compiled route handler function */
   handler: RouteHandlerFunction;
+  /** Compiled regex for pattern matching */
   regex: RegExp;
+  /** Names of parameters extracted from the pattern */
   paramNames: string[];
-  // Code Generation Runtime
+  /** Compiled optimized handler for runtime code generation */
   compiledHandler?: Function;
+  /** Whether this is a static route (no parameters) */
   isStatic?: boolean;
+  /** Original handler before compilation (for debugging) */
   originalHandler?: SimpleHandler | RouteHandlerFunction;
 }
 
 /**
- * BlitzJS - Ultra-lightweight, Elysia-like web framework
- * Avec génération de code à l'exécution par défaut pour des performances maximales
+ * BlitzJS - Ultra-lightweight, high-performance web framework
+ * 
+ * Main framework class that handles routing, middleware, and HTTP server management.
+ * Features runtime code generation enabled by default for maximum performance.
+ * 
+ * Architecture:
+ * - Static routes use O(1) HashMap lookup for instant access
+ * - Dynamic routes use optimized regex with parameter extraction
+ * - Template pattern handlers eliminate closure overhead
+ * - Runtime compilation generates specialized handlers
  */
 export class BlitzJS {
+  /** uWebSockets.js application instance */
   private app: TemplatedApp;
+  /** Collection of registered routes */
   private routes: Route[] = [];
+  /** Collection of registered middlewares */
   private middlewares: MiddlewareFunction[] = [];
+  /** Application configuration */
   private config: BlitzConfig;
+  /** Route prefix for sub-application mounting */
   private prefix: string;
   
-  // Code Generation Runtime (activé par défaut)
+  // Runtime Code Generation System (enabled by default for max performance)
+  /** Whether runtime code generation is enabled */
   private codeGenEnabled: boolean = true;
+  /** Counter for compiled route handlers */
   private routeCompileCount: number = 0;
   
   // 🚀 ULTRA-FAST OPTIMIZATIONS
-  private staticRoutes = new Map<string, Route>();     // O(1) routes statiques
-  private compiledRouterFunction: Function | null = null;  // Router ultra-compilé
+  /** O(1) static route lookup using HashMap (method:pattern -> Route) */
+  private staticRoutes = new Map<string, Route>();
+  /** Ultra-compiled router function for maximum performance */
+  private compiledRouterFunction: Function | null = null;
   
-  // 🔥 TEMPLATE PATTERN - Templates ultra-optimisés sans closures
+  // 🔥 TEMPLATE PATTERN - Ultra-optimized templates without closures
+  /** Cache for compiled template handlers to avoid recompilation */
   private static readonly TEMPLATE_CACHE = new Map<string, Function>();
 
+  /**
+   * Initialize a new BlitzJS application
+   * 
+   * @param config - Configuration options for the application
+   * 
+   * Creates either a main application (with uWebSockets.js instance) or a 
+   * sub-application (for mounting with prefix) based on configuration.
+   */
   constructor(config: BlitzConfig = {}) {
     this.config = {
       port: 3000,
@@ -82,14 +171,20 @@ export class BlitzJS {
   }
 
   /**
-   * Add middleware to the application
+   * Add middleware to the application or mount a sub-application
+   * 
+   * @param middleware - Either a middleware function or a BlitzJS sub-application
+   * @returns this - For method chaining
+   * 
+   * When mounting a sub-application, all its routes and middlewares are 
+   * integrated with the appropriate prefix handling.
    */
   use(middleware: MiddlewareFunction | BlitzJS): this {
     if (middleware instanceof BlitzJS) {
-      // Mount a sub-application
+      // Mount a sub-application with its routes and middlewares
       this.mountSubApp(middleware);
     } else {
-      // Add regular middleware
+      // Add regular middleware to the chain
       this.middlewares.push(middleware);
     }
     return this;
@@ -97,14 +192,19 @@ export class BlitzJS {
 
   /**
    * Mount a sub-application with its routes and middlewares
+   * 
+   * @param subApp - The sub-application to mount
+   * 
+   * This process integrates all routes and middlewares from the sub-app,
+   * applying the appropriate prefix transformations.
    */
   private mountSubApp(subApp: BlitzJS): void {
-    // Add sub-app's middlewares with prefix
+    // Add sub-app's middlewares with prefix awareness
     for (const middleware of subApp.middlewares) {
       this.middlewares.push(middleware);
     }
     
-    // Add sub-app's routes with prefix
+    // Add sub-app's routes with prefix transformation
     for (const route of subApp.routes) {
       const prefixedPattern = this.combinePaths(subApp.prefix, route.pattern);
       this.addRoute(route.method, prefixedPattern, route.handler, route.originalHandler);
@@ -113,6 +213,12 @@ export class BlitzJS {
 
   /**
    * Combine paths properly handling slashes
+   * 
+   * @param prefix - The prefix path
+   * @param path - The route path
+   * @returns Combined path with proper slash handling
+   * 
+   * Ensures proper URL construction by normalizing slashes between prefix and path.
    */
   private combinePaths(prefix: string, path: string): string {
     if (!prefix) return path;
@@ -128,7 +234,11 @@ export class BlitzJS {
   }
 
   /**
-   * Handle GET requests with Elysia-like simplicity
+   * Handle GET requests with simple response support
+   * 
+   * @param pattern - URL pattern (e.g., '/users/:id')
+   * @param handler - Simple handler (can return values directly)
+   * @returns this - For method chaining
    */
   get(pattern: string, handler: SimpleHandler): this {
     this.addRoute('get', pattern, this.createSimpleHandler(handler), handler);
@@ -136,7 +246,11 @@ export class BlitzJS {
   }
 
   /**
-   * Handle POST requests with Elysia-like simplicity
+   * Handle POST requests with simple response support
+   * 
+   * @param pattern - URL pattern (e.g., '/users')
+   * @param handler - Simple handler (can return values directly)
+   * @returns this - For method chaining
    */
   post(pattern: string, handler: SimpleHandler): this {
     this.addRoute('post', pattern, this.createSimpleHandler(handler), handler);
@@ -144,7 +258,11 @@ export class BlitzJS {
   }
 
   /**
-   * Handle PUT requests with Elysia-like simplicity
+   * Handle PUT requests with simple response support
+   * 
+   * @param pattern - URL pattern (e.g., '/users/:id')
+   * @param handler - Simple handler (can return values directly)
+   * @returns this - For method chaining
    */
   put(pattern: string, handler: SimpleHandler): this {
     this.addRoute('put', pattern, this.createSimpleHandler(handler), handler);
@@ -152,7 +270,11 @@ export class BlitzJS {
   }
 
   /**
-   * Handle DELETE requests with Elysia-like simplicity
+   * Handle DELETE requests with simple response support
+   * 
+   * @param pattern - URL pattern (e.g., '/users/:id')
+   * @param handler - Simple handler (can return values directly)
+   * @returns this - For method chaining
    */
   delete(pattern: string, handler: SimpleHandler): this {
     this.addRoute('delete', pattern, this.createSimpleHandler(handler), handler);
@@ -160,7 +282,11 @@ export class BlitzJS {
   }
 
   /**
-   * Handle PATCH requests with Elysia-like simplicity
+   * Handle PATCH requests with simple response support
+   * 
+   * @param pattern - URL pattern (e.g., '/users/:id')
+   * @param handler - Simple handler (can return values directly)
+   * @returns this - For method chaining
    */
   patch(pattern: string, handler: SimpleHandler): this {
     this.addRoute('patch', pattern, this.createSimpleHandler(handler), handler);
@@ -168,7 +294,11 @@ export class BlitzJS {
   }
 
   /**
-   * Handle OPTIONS requests with Elysia-like simplicity
+   * Handle OPTIONS requests with simple response support
+   * 
+   * @param pattern - URL pattern (e.g., '/users/:id')
+   * @param handler - Simple handler (can return values directly)
+   * @returns this - For method chaining
    */
   options(pattern: string, handler: SimpleHandler): this {
     this.addRoute('options', pattern, this.createSimpleHandler(handler), handler);
@@ -176,7 +306,11 @@ export class BlitzJS {
   }
 
   /**
-   * Handle HEAD requests with Elysia-like simplicity
+   * Handle HEAD requests with simple response support
+   * 
+   * @param pattern - URL pattern (e.g., '/users/:id')
+   * @param handler - Simple handler (can return values directly)
+   * @returns this - For method chaining
    */
   head(pattern: string, handler: SimpleHandler): this {
     this.addRoute('head', pattern, this.createSimpleHandler(handler), handler);
@@ -184,8 +318,14 @@ export class BlitzJS {
   }
 
   /**
-   * Start server and return this for method chaining
-   * Only works on main app (not sub-apps with prefix)
+   * Start the HTTP server and begin listening for requests
+   * 
+   * @param port - Optional port override
+   * @param callback - Optional callback when server starts
+   * @returns this - For method chaining
+   * 
+   * Only works on main app (not sub-apps with prefix).
+   * Triggers final router compilation for maximum performance.
    */
   listen(port?: number, callback?: (token: false | object) => void): this {
     if (this.prefix) {
@@ -196,10 +336,10 @@ export class BlitzJS {
     
     this.app.listen(this.config.host!, serverPort, (token) => {
       if (token) {
-        // � PHASE FINALE : Compilation du router ultra-rapide
+        // 🚀 FINAL PHASE: Compile ultra-fast router for maximum performance
         this.compileUltraFastRouter();
         
-        // �🚀 Afficher les statistiques de performance ultra-avancées
+        // 🚀 Display ultra-advanced performance statistics
         const staticCount = this.staticRoutes.size;
         const dynamicCount = this.routes.filter(r => !r.isStatic).length;
         const totalRoutes = staticCount + dynamicCount;
@@ -210,7 +350,7 @@ export class BlitzJS {
         console.log(`⚡ Runtime Code Generation: ENABLED`);
         console.log(`📊 Ultra-fast router compiled with ${totalRoutes} routes:`);
         console.log(`   🏃 Static routes: ${staticCount} (O(1) HashMap lookup)`);
-        console.log(`   � Dynamic routes: ${dynamicCount} (optimized regex + parameter extraction)`);
+        console.log(`   🎯 Dynamic routes: ${dynamicCount} (optimized regex + parameter extraction)`);
         console.log(`   ⚡ Compiled handlers: ${compiledRoutes}/${totalRoutes} (${Math.round(compiledRoutes/totalRoutes*100)}%)`);
         console.log(`   💾 Headers pre-computed: ENABLED`);
         console.log(`   🎯 Performance target: 500,000+ req/s for static routes`);
@@ -226,18 +366,30 @@ export class BlitzJS {
 
   /**
    * Get the underlying uWebSockets.js app instance
+   * 
+   * @returns The uWebSockets.js TemplatedApp instance
+   * 
+   * Provides access to the low-level uWS app for advanced customization.
    */
   getUwsApp(): TemplatedApp {
     return this.app;
   }
 
   /**
-   * Add a route avec optimisations ultra-avancées 🚀
+   * Add a route with ultra-advanced optimizations 🚀
+   * 
+   * @param method - HTTP method for the route
+   * @param pattern - URL pattern with parameter support
+   * @param handler - Compiled route handler function
+   * @param originalHandler - Original handler before compilation
+   * 
+   * This method performs pattern compilation, route categorization (static vs dynamic),
+   * and runtime code generation for maximum performance.
    */
   private addRoute(method: HttpMethod, pattern: string, handler: RouteHandlerFunction, originalHandler?: SimpleHandler | RouteHandlerFunction): void {
     const { regex, paramNames, isStatic } = this.compilePattern(pattern);
     
-    // Créer la route avec les informations pour la génération de code
+    // Create route with information for code generation
     const route: Route = {
       method,
       pattern,
@@ -249,12 +401,12 @@ export class BlitzJS {
       compiledHandler: undefined
     };
 
-    // 🚀 RUNTIME CODE GENERATION - Compiler le handler immédiatement si activé
+    // 🚀 RUNTIME CODE GENERATION - Compile handler immediately if enabled
     if (this.codeGenEnabled && !this.prefix) {
       route.compiledHandler = this.compileOptimizedHandler(route);
     }
     
-    // 🔥 ULTRA-FAST ROUTING - Stocker dans la structure appropriée
+    // 🔥 ULTRA-FAST ROUTING - Store in appropriate structure
     if (isStatic) {
       const key = `${method.toUpperCase()}:${pattern}`;
       this.staticRoutes.set(key, route);
@@ -267,13 +419,19 @@ export class BlitzJS {
 
   /**
    * Compile a route pattern with ultra-fast optimization detection
+   * 
+   * @param pattern - URL pattern to compile
+   * @returns Compilation result with regex, parameter names, and static flag
+   * 
+   * Determines if route is static (no parameters) for O(1) HashMap lookup,
+   * or dynamic requiring regex matching with parameter extraction.
    */
   private compilePattern(pattern: string): { regex: RegExp; paramNames: string[]; isStatic: boolean } {
     const paramNames: string[] = [];
     const isStatic = !pattern.includes(':') && !pattern.includes('*');
     
     if (isStatic) {
-      // Route statique - pas besoin de regex coûteux
+      // Static route - no need for expensive regex
       return {
         regex: new RegExp(''), // Dummy regex, won't be used for static routes
         paramNames: [],
@@ -281,7 +439,7 @@ export class BlitzJS {
       };
     }
     
-    // Route dynamique - regex ultra-optimisé
+    // Dynamic route - ultra-optimized regex
     let regexPattern = pattern
       .replace(/:([^/]+)/g, (match, paramName) => {
         paramNames.push(paramName);
@@ -296,10 +454,14 @@ export class BlitzJS {
   }
 
   /**
-   * Setup routes avec ultra-fast handler 🚀
+   * Setup routes with ultra-fast handler 🚀
+   * 
+   * Registers catch-all handlers for each HTTP method that delegate to 
+   * the ultra-optimized request handler. This approach allows a single
+   * handler to manage all routes with maximum performance.
    */
   private setupRoutes(): void {
-    // Setup all HTTP methods avec le handler ultra-optimisé
+    // Setup all HTTP methods with ultra-optimized handler
     this.app.get('/*', (res: HttpResponse, req: HttpRequest) => {
       this.handleUltraFastRequest(req, res);
     });
@@ -330,11 +492,20 @@ export class BlitzJS {
   }
 
   /**
-   * Create a route handler that supports simple responses
+   * Create a route handler that supports simple responses with auto-serialization
+   * 
+   * @param handler - Simple handler that can be a value, object, or function
+   * @returns Compiled RouteHandlerFunction
+   * 
+   * This method converts simple handlers into full RouteHandlerFunction.
+   * Supports automatic serialization of return values:
+   * - Primitives (string, number, boolean, null) -> text/plain
+   * - Objects/Arrays -> application/json
+   * - Functions -> executed and result auto-serialized
    */
   private createSimpleHandler(handler: SimpleHandler): RouteHandlerFunction {
     if (typeof handler === 'string' || typeof handler === 'number' || typeof handler === 'boolean' || handler === null) {
-      // Simple primitive response
+      // Simple primitive response - pre-compile for performance
       return async (ctx: RouteContext) => {
         ctx.res.writeHeader('Content-Type', 'text/plain');
         ctx.res.end(String(handler));
@@ -342,7 +513,7 @@ export class BlitzJS {
     }
     
     if (typeof handler === 'object' && handler !== null) {
-      // Simple object response (JSON)
+      // Simple object response (JSON) - pre-serialize for performance
       return async (ctx: RouteContext) => {
         ctx.res.writeHeader('Content-Type', 'application/json');
         ctx.res.end(JSON.stringify(handler));
@@ -356,7 +527,7 @@ export class BlitzJS {
           const result = await (handler as SimpleHandlerFunction)(ctx);
           
           if (result !== undefined) {
-            // Auto-handle return values
+            // Auto-handle return values based on type
             if (typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean' || result === null) {
               ctx.res.writeHeader('Content-Type', 'text/plain');
               ctx.res.end(String(result));
@@ -376,7 +547,7 @@ export class BlitzJS {
       };
     }
 
-    // Fallback
+    // Fallback for invalid handlers
     return async (ctx: RouteContext) => {
       ctx.res.writeStatus('500 Internal Server Error');
       ctx.res.writeHeader('Content-Type', 'application/json');
@@ -385,8 +556,12 @@ export class BlitzJS {
   }
 
   /**
-   * 🚀 TEMPLATE PATTERN ULTRA-OPTIMISÉ - Handlers sans closures
-   * Performance +30% par élimination des captures de variables
+   * 🚀 ULTRA-OPTIMIZED TEMPLATE PATTERN - Handlers without closures
+   * 
+   * Performance +30% by eliminating variable captures.
+   * Creates specialized template functions for different response types.
+   * 
+   * @returns Template function for string responses
    */
   private static createUltraFastStringTemplate(): Function {
     return function ultraFastStringTemplate(
@@ -396,11 +571,11 @@ export class BlitzJS {
       return function templateStringHandler(req: any, res: any) {
         try {
           if (!res.aborted) {
-            // Headers loop ultra-optimisé
+            // Ultra-optimized headers loop
             for (let i = 0; i < precomputedHeaders.length; i += 2) {
               res.writeHeader(precomputedHeaders[i], precomputedHeaders[i + 1]);
             }
-            res.end(precomputedBuffer); // ✅ Buffer pré-calculé, pas de closure
+            res.end(precomputedBuffer); // ✅ Pre-computed Buffer, no closure
           }
         } catch (error) {
           console.error('Ultra-fast string template error:', error);
@@ -413,6 +588,11 @@ export class BlitzJS {
     };
   }
 
+  /**
+   * Ultra-fast JSON template with pre-serialized responses
+   * 
+   * @returns Template function for JSON responses
+   */
   private static createUltraFastJSONTemplate(): Function {
     return function ultraFastJSONTemplate(
       precomputedBuffer: Buffer,
@@ -421,11 +601,11 @@ export class BlitzJS {
       return function templateJSONHandler(req: any, res: any) {
         try {
           if (!res.aborted) {
-            // Headers loop ultra-optimisé
+            // Ultra-optimized headers loop
             for (let i = 0; i < precomputedHeaders.length; i += 2) {
               res.writeHeader(precomputedHeaders[i], precomputedHeaders[i + 1]);
             }
-            res.end(precomputedBuffer); // ✅ JSON Buffer pré-calculé
+            res.end(precomputedBuffer); // ✅ Pre-computed JSON Buffer
           }
         } catch (error) {
           console.error('Ultra-fast JSON template error:', error);
@@ -438,6 +618,11 @@ export class BlitzJS {
     };
   }
 
+  /**
+   * Ultra-fast function template with parameter handling optimization
+   * 
+   * @returns Template function for dynamic function responses
+   */
   private static createUltraFastFunctionTemplate(): Function {
     return function ultraFastFunctionTemplate(
       originalHandler: Function,
@@ -448,14 +633,14 @@ export class BlitzJS {
         // Template pour routes statiques
         return async function templateStaticFunctionHandler(req: any, res: any, ctx?: RouteContext) {
           try {
-            // Headers pré-optimisés
+            // Pre-optimized headers
             for (let i = 0; i < precomputedHeaders.length; i += 2) {
               res.writeHeader(precomputedHeaders[i], precomputedHeaders[i + 1]);
             }
             
             const context = ctx || {
               req, res,
-              params: {}, // ✅ Objet vide réutilisable
+              params: {}, // ✅ Reusable empty object
               query: {},
               body: undefined
             };
@@ -482,7 +667,7 @@ export class BlitzJS {
         // Template pour routes dynamiques
         return async function templateDynamicFunctionHandler(req: any, res: any, url?: string, extractedParams?: Record<string, string>, ctx?: RouteContext) {
           try {
-            // Headers pré-optimisés
+            // Pre-optimized headers
             for (let i = 0; i < precomputedHeaders.length; i += 2) {
               res.writeHeader(precomputedHeaders[i], precomputedHeaders[i + 1]);
             }
@@ -517,12 +702,22 @@ export class BlitzJS {
   }
 
   /**
-   * 🔥 OPTIMIZED HANDLER COMPILATION avec Template Pattern
+   * 🔥 OPTIMIZED HANDLER COMPILATION with Template Pattern
+   * 
+   * @param route - Route to compile
+   * @returns Compiled optimized handler function
+   * 
+   * This method generates specialized handlers based on the route's response type:
+   * - String responses: Pre-computed buffer with zero-allocation sending
+   * - JSON responses: Pre-serialized JSON buffer
+   * - Function responses: Optimized templates with parameter handling
+   * 
+   * All handlers use the Template Pattern to eliminate closures and maximize performance.
    */
   private compileOptimizedHandler(route: Route): Function {
     const routeKey = `${route.method}_${route.pattern}`;
     
-    // Vérifier le cache des templates
+    // Check template cache first
     if (BlitzJS.TEMPLATE_CACHE.has(routeKey)) {
       return BlitzJS.TEMPLATE_CACHE.get(routeKey)!;
     }
@@ -530,14 +725,14 @@ export class BlitzJS {
     let compiledHandler: Function;
     const templateHeaders = this.precomputeOptimizedHeaders(route);
 
-    // ⚡ Template String Handler (sans closures)
+    // ⚡ Template String Handler (without closures)
     if (typeof route.originalHandler === 'string') {
       const responseBuffer = Buffer.from(route.originalHandler, 'utf8');
       const stringTemplate = BlitzJS.createUltraFastStringTemplate();
       compiledHandler = stringTemplate(responseBuffer, templateHeaders);
       console.log(`🔥 Template string handler compiled: ${route.method.toUpperCase()} ${route.pattern}`);
     }
-    // ⚡ Template JSON Handler (pré-sérialisé)
+    // ⚡ Template JSON Handler (pre-serialized)
     else if (typeof route.originalHandler === 'object' && route.originalHandler !== null) {
       const jsonString = JSON.stringify(route.originalHandler);
       const jsonBuffer = Buffer.from(jsonString, 'utf8');
@@ -545,20 +740,20 @@ export class BlitzJS {
       compiledHandler = jsonTemplate(jsonBuffer, templateHeaders);
       console.log(`🔥 Template JSON handler compiled: ${route.method.toUpperCase()} ${route.pattern}`);
     }
-    // ⚡ Template Function Handler (optimisé)
+    // ⚡ Template Function Handler (optimized)
     else if (typeof route.originalHandler === 'function') {
       const hasParams = route.paramNames.length > 0;
       const functionTemplate = BlitzJS.createUltraFastFunctionTemplate();
       compiledHandler = functionTemplate(route.originalHandler, templateHeaders, hasParams);
       console.log(`🔥 Template function handler compiled: ${route.method.toUpperCase()} ${route.pattern}`);
     }
-    // Fallback
+    // Fallback for unknown handler types
     else {
       compiledHandler = route.handler;
       console.log(`⚠️  Using original handler: ${route.method.toUpperCase()} ${route.pattern}`);
     }
 
-    // Cache du template compilé
+    // Cache the compiled template for future use
     BlitzJS.TEMPLATE_CACHE.set(routeKey, compiledHandler);
     this.routeCompileCount++;
     
@@ -566,7 +761,13 @@ export class BlitzJS {
   }
 
   /**
-   * Headers pré-calculés pour templates
+   * Pre-compute optimized headers for templates
+   * 
+   * @param route - Route to generate headers for
+   * @returns Array of pre-computed headers [key, value, key, value, ...]
+   * 
+   * Headers are stored as a flat array for ultra-fast iteration without
+   * object property access overhead.
    */
   private precomputeOptimizedHeaders(route: Route): string[] {
     const headers: string[] = [];
@@ -585,7 +786,13 @@ export class BlitzJS {
   }
 
   /**
-   * Static file helper (like Elysia's file())
+   * Static file helper for serving files
+   * 
+   * @param path - File system path to serve
+   * @returns RouteHandlerFunction that serves the file
+   * 
+   * Provides efficient static file serving with automatic MIME type detection
+   * and proper HTTP headers. Handles 404 errors gracefully.
    */
   static file(path: string): RouteHandlerFunction {
     return async (ctx) => {
@@ -614,6 +821,12 @@ export class BlitzJS {
 
   /**
    * Get MIME type from file extension
+   * 
+   * @param filepath - File path to analyze
+   * @returns Appropriate MIME type string
+   * 
+   * Maps common file extensions to their MIME types for proper
+   * Content-Type header setting.
    */
   private static getMimeType(filepath: string): string {
     const ext = filepath.split('.').pop()?.toLowerCase();
@@ -638,10 +851,18 @@ export class BlitzJS {
   }
 
   /**
-   * 🔥 ULTRA-FAST ROUTER COMPILATION - Version simplifiée et fiable
+   * 🔥 ULTRA-FAST ROUTER COMPILATION - Simplified and reliable version
+   * 
+   * Compiles an ultra-optimized router function that handles both static and
+   * dynamic routes with maximum performance. Uses a simplified approach to
+   * avoid dynamic code generation errors while maintaining speed.
+   * 
+   * Performance characteristics:
+   * - Static routes: O(1) HashMap lookup
+   * - Dynamic routes: Optimized regex matching with early termination
    */
   private compileUltraFastRouter(): void {
-    // Version simplifiée sans génération de code dynamique pour éviter les erreurs
+    // Simplified version without dynamic code generation to avoid errors
     this.compiledRouterFunction = (method: string, url: string, staticRoutes: Map<string, Route>, dynamicRoutes: Route[]) => {
       const key = method.toUpperCase() + ':' + url;
       
@@ -672,7 +893,19 @@ export class BlitzJS {
   }
 
   /**
-   * 🔥 ULTRA-FAST REQUEST HANDLER - Performance maximale O(1) pour routes statiques
+   * 🔥 ULTRA-FAST REQUEST HANDLER - Maximum performance O(1) for static routes
+   * 
+   * This is the main request handler that processes all incoming HTTP requests.
+   * It uses the compiled ultra-fast router for maximum performance:
+   * 
+   * 1. First tries the ultra-compiled router (O(1) for static, optimized for dynamic)
+   * 2. Falls back to standard routing if needed
+   * 3. Handles errors gracefully without crashing
+   * 
+   * Performance optimizations:
+   * - Direct handler execution without middleware overhead for hot paths
+   * - Pre-compiled handlers eliminate runtime compilation
+   * - Minimal object allocation during request processing
    */
   private handleUltraFastRequest = async (req: any, res: any): Promise<void> => {
     const method = req.getMethod().toUpperCase();
@@ -707,7 +940,7 @@ export class BlitzJS {
         );
         
         if (result && result.handler) {
-          // Vérifier que le handler est bien une fonction
+          // Verify handler is actually a function
           if (typeof result.handler === 'function') {
             // Créer le contexte avec body et query
             const ctx = {
@@ -749,7 +982,15 @@ export class BlitzJS {
   };
 
   /**
-   * Fallback handler pour cas exceptionnels
+   * Fallback handler for exceptional cases
+   * 
+   * @param req - uWebSockets.js request object
+   * @param res - uWebSockets.js response object  
+   * @param method - HTTP method string
+   * @param url - Request URL string
+   * 
+   * Used when the ultra-fast router fails or for edge cases.
+   * Provides a safety net to ensure requests are always handled.
    */
   private async handleRequestFallback(req: any, res: any, method: string, url: string, body?: unknown, query?: Record<string, string>): Promise<void> {
     // Simple fallback - chercher dans les routes dynamiques
@@ -839,7 +1080,13 @@ export class BlitzJS {
 }
 
 /**
- * Create a new BlitzJS instance (Elysia-like factory)
+ * Create a new BlitzJS instance (factory function)
+ * 
+ * @param config - Optional configuration for the BlitzJS instance
+ * @returns New BlitzJS application instance
+ * 
+ * This factory function provides a convenient API for creating BlitzJS apps.
+ * Supports both main applications and sub-applications with prefix mounting.
  */
 export function Blitz(config?: BlitzConfig): BlitzJS {
   return new BlitzJS(config);
