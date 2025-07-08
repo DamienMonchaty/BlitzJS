@@ -27,20 +27,10 @@ export type HttpMethod = 'get' | 'post' | 'put' | 'delete' | 'patch' | 'options'
  * Contains request/response objects and extracted parameters
  */
 export interface RouteContext {
-  req: {
-    getMethod(): string;
-    getUrl(): string;
-    getQuery(): string;
-    getHeader(name: string): string;
-  };
-  /** Essential response methods */
-  res: {
-    writeStatus(status: string): HttpResponse;
-    writeHeader(key: string, value: string): HttpResponse;
-    write(chunk: string): HttpResponse;
-    end(body?: string): HttpResponse;
-    aborted: boolean;
-  };
+  /** uWebSockets.js request object */
+  req: HttpRequest;
+  /** uWebSockets.js response object */
+  res: HttpResponse;
   /** URL parameters extracted from the route pattern (e.g., :id) */
   params: Record<string, string>;
   /** Query string parameters */
