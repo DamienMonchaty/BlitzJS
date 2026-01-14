@@ -1,7 +1,7 @@
 {
   "name": "@damienmonchaty/blitzjs",
   "version": "1.0.0",
-  "description": "Ultra-fast HTTP framework with Elysia-like API built on uWebSockets.js",
+  "description": "Ultra-fast HTTP framework built on uWebSockets.js",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
