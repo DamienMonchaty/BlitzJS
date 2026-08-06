@@ -4,6 +4,7 @@
   "description": "Ultra-fast HTTP framework built on uWebSockets.js",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "type": "module",
   "files": [
     "dist",
     "README.md",
@@ -44,14 +45,21 @@
     "node": ">=16.0.0"
   },
   "peerDependencies": {
-    "uWebSockets.js": ">=20.52.0"
+    "uWebSockets.js": ">=20.67.0"
   },
   "dependencies": {
-    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.52.0"
+    "@standard-schema/spec": "^1.1.0",
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.67.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
+    "autocannon": "^8.0.0",
+    "elysia": "^1.4.29",
+    "fastify": "^5.11.2",
+    "swagger-ui-dist": "^5.32.12",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "tsx": "^4.23.7",
+    "typescript": "^5.8.3",
+    "zod": "^4.4.3"
   }
 }

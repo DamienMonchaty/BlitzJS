@@ -1,6 +1,24 @@
 // BlitzJS - Ultra-lightweight, Elysia-like web framework
-export { 
-  BlitzJS, 
+export {
+  BlitzJS,
+  cors,
+  errorHandler,
+  staticFile,
+  session,
+  MemoryStore,
+  rateLimit,
+  requireSessionAuth,
+  requireBearerAuth,
+  requireBasicAuth,
+  getAuthorizationHeader,
+  getBearerToken,
+  getBasicCredentials,
+  database,
+  getDatabase,
+  requireDatabase,
+  generateOpenApiDocument,
+  swagger,
+  type PluginFunction,
   type BlitzConfig,
   type RouteContext,
   type RouteHandlerFunction,
@@ -8,8 +26,30 @@ export {
   type HttpMethod,
   type SimpleResponse,
   type SimpleHandlerFunction,
-  type SimpleHandler
-} from './core/BlitzJS';
+  type SimpleHandler,
+  type CookieOptions,
+  type CorsOptions,
+  type ErrorHandlerOptions,
+  type MultipartFile,
+  type MultipartBody,
+  type SessionOptions,
+  type SessionStore,
+  type RateLimitOptions,
+  type SessionAuthOptions,
+  type BearerAuthOptions,
+  type BasicAuthOptions,
+  type BasicCredentials,
+  type DatabaseFactory,
+  type DatabaseOptions,
+  type OpenApiInfo,
+  type OpenApiServer,
+  type OpenApiOptions,
+  type OpenApiOperationMeta,
+  type SwaggerOptions,
+  type RouteSchema,
+  type ValidatedRouteContext,
+  type ValidatedHandlerFunction
+} from './core/BlitzJS.js';
 
 // Re-export uWebSockets types for advanced users
-export type { HttpRequest, HttpResponse, TemplatedApp } from 'uWebSockets.js';
+export type { HttpRequest, HttpResponse, TemplatedApp, WebSocket, WebSocketBehavior } from 'uWebSockets.js';

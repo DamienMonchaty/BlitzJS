@@ -184,22 +184,20 @@ const stringTemplate = function(ctx, precomputedResponse, precomputedHeaders) {
 ## Roadmap
 
 ### 🚧 In Development
-- [ ] Request body parsing (JSON, form-data, etc.)
-- [ ] Query string parsing
-- [ ] Cookie support
-- [ ] Session management
-- [ ] Static file serving
-- [ ] Error handling middleware
-- [ ] CORS support
-- [ ] Rate limiting
-- [ ] WebSocket support
+- [x] Cookie support
+- [x] CORS support
+- [x] Request validation
+- [x] Error handling middleware helper
+- [x] Multipart/form-data parsing
+- [x] Session management
+- [x] Rate limiting
+- [x] WebSocket support
 
 ### 🎯 Planned Features
-- [ ] Plugin system
-- [ ] Request validation
+- [x] OpenAPI/Swagger support
+- [x] Plugin system
 - [ ] Authentication helpers
 - [ ] Database integrations
-- [ ] OpenAPI/Swagger support
 - [ ] Testing utilities
 - [ ] Performance monitoring
 - [ ] Clustering support
@@ -225,9 +223,7 @@ npm run dev
 
 ## Examples
 
-See the `example/` directory:
-
-- `blitz-style.ts` - Complete BlitzJS example with various features
+See `examples/simple-server.ts` for a minimal runnable example. Full API usage (middleware, sub-apps, static files, body/query parsing) is documented in [USAGE.md](./USAGE.md).
 
 ## License
 

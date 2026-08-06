@@ -15,7 +15,7 @@
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { App, SSLApp, TemplatedApp, HttpRequest, HttpResponse, WebSocketBehavior } from 'uWebSockets.js';
+import { App, SSLApp, TemplatedApp, HttpRequest, HttpResponse } from 'uWebSockets.js';
 import {
   BlitzConfig,
   HttpMethod,
@@ -23,7 +23,6 @@ import {
   Route,
   RouteContext,
   RouteHandlerFunction,
-  RouteInfo,
   SimpleHandler
 } from './types.js';
 import { compilePattern } from './pattern.js';
@@ -39,26 +38,7 @@ import { bufferResponse } from './response-buffer.js';
 export * from './types.js';
 export { staticFile } from './static-file.js';
 export { cors } from './cors.js';
-export { errorHandler } from './error-handler.js';
-export type { ErrorHandlerOptions } from './error-handler.js';
-export type { MultipartFile, MultipartBody } from './body.js';
-export { session, MemoryStore } from './session.js';
-export type { SessionOptions, SessionStore } from './session.js';
-export { rateLimit } from './rate-limit.js';
-export type { RateLimitOptions } from './rate-limit.js';
-export { requireSessionAuth, requireBearerAuth, requireBasicAuth, getAuthorizationHeader, getBearerToken, getBasicCredentials } from './auth.js';
-export type { SessionAuthOptions, BearerAuthOptions, BasicAuthOptions, BasicCredentials } from './auth.js';
-export { database, getDatabase, requireDatabase } from './database.js';
-export type { DatabaseFactory, DatabaseOptions } from './database.js';
-export { generateOpenApiDocument } from './openapi.js';
-export type { OpenApiInfo, OpenApiServer, OpenApiOptions } from './openapi.js';
-export type { OpenApiOperationMeta } from './validation.js';
-export { swagger } from './swagger.js';
-export type { SwaggerOptions } from './swagger.js';
 export type { RouteSchema, ValidatedRouteContext, ValidatedHandlerFunction } from './validation.js';
-
-/** A plugin registers its own routes/setup on the app it's given, via `.use(plugin())` - see `swagger()` */
-export type PluginFunction = (app: BlitzJS) => void;
 
 /** Handler accepted by a route registered with a schema (see `RouteSchema`) */
 type SchemaHandler<TParams, TQuery, TBody> = ValidatedHandlerFunction<
@@ -134,21 +114,16 @@ export class BlitzJS {
   }
 
   /**
-   * Add middleware, mount a sub-application, or apply a plugin.
+   * Add middleware to the application, or mount a sub-application.
    *
-   * Mounting integrates a sub-app's routes/middlewares with prefix handling.
-   * A plugin (`(app) => void`, e.g. `swagger()`) is called once with `this`
-   * to let it register its own routes. Distinguished from middleware by
-   * arity: middlewares always declare both `ctx` and `next` (2 params,
-   * without a default on `next`); a 1-param function is treated as a plugin.
+   * When mounting a sub-application, all its routes and middlewares are
+   * integrated with the appropriate prefix handling.
    */
-  use(pluginOrMiddleware: MiddlewareFunction | PluginFunction | BlitzJS): this {
-    if (pluginOrMiddleware instanceof BlitzJS) {
-      this.mountSubApp(pluginOrMiddleware);
-    } else if (pluginOrMiddleware.length === 1) {
-      (pluginOrMiddleware as PluginFunction)(this);
+  use(middleware: MiddlewareFunction | BlitzJS): this {
+    if (middleware instanceof BlitzJS) {
+      this.mountSubApp(middleware);
     } else {
-      this.middlewares.push(pluginOrMiddleware as MiddlewareFunction);
+      this.middlewares.push(middleware);
     }
     return this;
   }
@@ -295,38 +270,6 @@ export class BlitzJS {
     return this.app;
   }
 
-  /** Snapshot of every registered route (method, pattern, paramNames, schema) - see `generateOpenApiDocument` */
-  getRoutes(): RouteInfo[] {
-    const routes: RouteInfo[] = [];
-
-    for (const route of this.staticRoutes.values()) {
-      routes.push({ method: route.method, pattern: route.pattern, paramNames: route.paramNames, schema: route.schema });
-    }
-    for (const route of this.routes) {
-      routes.push({ method: route.method, pattern: route.pattern, paramNames: route.paramNames, schema: route.schema });
-    }
-
-    return routes;
-  }
-
-  /**
-   * Register a WebSocket route, proxied directly to uWebSockets.js's
-   * `app.ws()` - see `WebSocketBehavior` for the `open`/`message`/`close`
-   * handlers. WebSocket upgrades bypass the HTTP middleware/routing
-   * pipeline entirely, so this is not available on sub-apps.
-   */
-  ws<UserData = unknown>(pattern: string, behavior: WebSocketBehavior<UserData>): this {
-    if (this.prefix) {
-      throw new Error('Cannot call ws() on a sub-app with prefix. Use ws() on the main app.');
-    }
-    if (!this.app) {
-      throw new Error('BlitzJS app was not initialized correctly.');
-    }
-
-    this.app.ws(pattern, behavior);
-    return this;
-  }
-
   /**
    * Static file helper for serving files. Kept as a static method for
    * backwards compatibility - equivalent to the standalone `staticFile()`.
@@ -427,7 +370,6 @@ export class BlitzJS {
       const ctx: RouteContext = {
         req,
         res: bufferedRes,
-        state: {},
         params: match?.params ?? {},
         query,
         body: undefined,
