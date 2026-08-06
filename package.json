@@ -1,7 +1,7 @@
 {
   "name": "@damienmonchaty/blitzjs",
   "version": "1.0.0",
-  "description": "Ultra-fast HTTP framework built on uWebSockets.js",
+  "description": "Ultra-fast, runtime-agnostic HTTP framework (Node, Bun, uWebSockets.js)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
@@ -47,9 +47,13 @@
   "peerDependencies": {
     "uWebSockets.js": ">=20.67.0"
   },
+  "peerDependenciesMeta": {
+    "uWebSockets.js": {
+      "optional": true
+    }
+  },
   "dependencies": {
-    "@standard-schema/spec": "^1.1.0",
-    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.67.0"
+    "@standard-schema/spec": "^1.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
@@ -60,6 +64,7 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.23.7",
     "typescript": "^5.8.3",
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.67.0",
     "zod": "^4.4.3"
   }
 }

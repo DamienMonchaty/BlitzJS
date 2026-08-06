@@ -1,5 +1,5 @@
-import { HttpRequest, HttpResponse, AppOptions } from 'uWebSockets.js';
 import type { CookieOptions } from './cookie.js';
+import type { RuntimeRequest, RuntimeResponse } from './runtime.js';
 
 export type { CookieOptions } from './cookie.js';
 export type { CorsOptions } from './cors.js';
@@ -12,10 +12,10 @@ export type HttpMethod = 'get' | 'post' | 'put' | 'delete' | 'patch' | 'options'
  * Contains request/response objects and extracted parameters
  */
 export interface RouteContext {
-  /** uWebSockets.js request object */
-  req: HttpRequest;
-  /** uWebSockets.js response object */
-  res: HttpResponse;
+  /** Runtime-agnostic request object (see `RuntimeRequest`) */
+  req: RuntimeRequest;
+  /** Runtime-agnostic response object (see `RuntimeResponse`) */
+  res: RuntimeResponse;
   /** Arbitrary per-request state bag for plugins/integrations (db clients, auth payloads, etc.). */
   state: Record<string, unknown>;
   /** URL parameters extracted from the route pattern (e.g., :id) */
@@ -53,8 +53,6 @@ export interface BlitzConfig {
   port?: number;
   /** Server host (default: '0.0.0.0') */
   host?: string;
-  /** SSL/TLS configuration for HTTPS */
-  ssl?: AppOptions;
   /** Prefix for sub-application mounting */
   prefix?: string;
 }

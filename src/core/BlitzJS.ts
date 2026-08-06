@@ -1,8 +1,12 @@
 /**
- * BlitzJS - Ultra-lightweight, high-performance web framework
+ * BlitzJS - Ultra-lightweight, high-performance, runtime-agnostic web framework
  *
- * Built on top of uWebSockets.js for maximum performance, featuring runtime
- * code generation, template pattern handlers, and ultra-fast routing.
+ * The core (this file) only knows `RuntimeRequest`/`RuntimeResponse`
+ * (`./runtime.js`) - it never touches a specific server implementation.
+ * Each runtime (Node, Bun, uWebSockets.js, ...) is a thin adapter under
+ * `../adapters/` that converts its native request/response into those
+ * interfaces and calls `dispatchRuntimeRequest()`. Features runtime code
+ * generation, template pattern handlers, and ultra-fast routing.
  *
  * Key Features:
  * - Runtime code generation for maximum performance
@@ -15,7 +19,6 @@
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { App, SSLApp, TemplatedApp, HttpRequest, HttpResponse, WebSocketBehavior } from 'uWebSockets.js';
 import {
   BlitzConfig,
   HttpMethod,
@@ -30,11 +33,13 @@ import { compilePattern } from './pattern.js';
 import { createSimpleHandler } from './simple-handler.js';
 import { compileOptimizedHandler } from './templates.js';
 import { runMiddlewares } from './middleware.js';
-import { parseBody, parseQueryString } from './body.js';
+import { parseQueryString } from './body.js';
 import { staticFile } from './static-file.js';
 import { applySchema, InferSchemaOutput, RouteSchema, ValidatedHandlerFunction } from './validation.js';
 import { parseCookies, serializeCookie } from './cookie.js';
-import { bufferResponse } from './response-buffer.js';
+import type { RuntimeRequest, RuntimeResponse } from './runtime.js';
+import { serveWithNode } from '../adapters/node.js';
+import { createFetchHandler } from '../adapters/fetch.js';
 
 export * from './types.js';
 export { staticFile } from './static-file.js';
@@ -85,8 +90,6 @@ interface RouteMatch {
  *   so the router never special-cases static vs. dynamic routes when invoking them
  */
 export class BlitzJS {
-  /** uWebSockets.js application instance (undefined for sub-apps) */
-  private app: TemplatedApp | null;
   /** Dynamic routes (regex-matched); static routes live in `staticRoutes` */
   private routes: Route[] = [];
   /** Registered middlewares, run in order before the matched route handler */
@@ -111,10 +114,9 @@ export class BlitzJS {
   private templateCache = new Map<string, RouteHandlerFunction>();
 
   /**
-   * Initialize a new BlitzJS application
-   *
-   * Creates either a main application (with a uWebSockets.js instance) or a
-   * sub-application (for mounting with a prefix) based on configuration.
+   * Initialize a new BlitzJS application (main app or prefixed sub-app -
+   * both are just routing/middleware containers; the server itself is
+   * started by whichever adapter you use, e.g. `.listen()` or `serveWithBun()`).
    */
   constructor(config: BlitzConfig = {}) {
     this.config = {
@@ -124,13 +126,6 @@ export class BlitzJS {
     };
 
     this.prefix = config.prefix || '';
-
-    if (!config.prefix) {
-      this.app = config.ssl ? SSLApp(config.ssl) : App();
-      this.setupRoutes();
-    } else {
-      this.app = null; // Sub-app doesn't have its own uWS app
-    }
   }
 
   /**
@@ -265,34 +260,24 @@ export class BlitzJS {
   }
 
   /**
-   * Start the HTTP server and begin listening for requests.
+   * Start the HTTP server on Node's built-in `http` module (also works
+   * unchanged under Bun) and begin listening for requests. Only works on a
+   * main app (not sub-apps with a prefix).
    *
-   * Only works on a main app (not sub-apps with a prefix).
+   * For uWebSockets.js or Bun's native `Bun.serve`, use the dedicated
+   * adapters instead (`adapters/uws.ts`, `serveWithBun()` in `adapters/bun.ts`).
    */
-  listen(port?: number, callback?: (token: false | object) => void): this {
+  listen(port?: number, callback?: (address: string) => void): this {
     if (this.prefix) {
       throw new Error('Cannot call listen() on a sub-app with prefix. Use listen() on the main app.');
     }
-    if (!this.app) {
-      throw new Error('BlitzJS app was not initialized correctly.');
-    }
 
-    const serverPort = port || this.config.port!;
-
-    this.app.listen(this.config.host!, serverPort, (token) => {
-      if (token) {
-        if (callback) callback(token);
-      } else {
-        console.error(`Failed to listen on port ${serverPort}`);
-        process.exit(1);
-      }
+    serveWithNode(createFetchHandler(this), {
+      port: port ?? this.config.port,
+      host: this.config.host,
+      onListen: callback
     });
     return this;
-  }
-
-  /** Get the underlying uWebSockets.js app instance (null for sub-apps) */
-  getUwsApp(): TemplatedApp | null {
-    return this.app;
   }
 
   /** Snapshot of every registered route (method, pattern, paramNames, schema) - see `generateOpenApiDocument` */
@@ -307,24 +292,6 @@ export class BlitzJS {
     }
 
     return routes;
-  }
-
-  /**
-   * Register a WebSocket route, proxied directly to uWebSockets.js's
-   * `app.ws()` - see `WebSocketBehavior` for the `open`/`message`/`close`
-   * handlers. WebSocket upgrades bypass the HTTP middleware/routing
-   * pipeline entirely, so this is not available on sub-apps.
-   */
-  ws<UserData = unknown>(pattern: string, behavior: WebSocketBehavior<UserData>): this {
-    if (this.prefix) {
-      throw new Error('Cannot call ws() on a sub-app with prefix. Use ws() on the main app.');
-    }
-    if (!this.app) {
-      throw new Error('BlitzJS app was not initialized correctly.');
-    }
-
-    this.app.ws(pattern, behavior);
-    return this;
   }
 
   /**
@@ -365,19 +332,6 @@ export class BlitzJS {
     }
   }
 
-  /** Register catch-all handlers for each HTTP method, delegating to the ultra-fast request handler */
-  private setupRoutes(): void {
-    if (!this.app) return;
-
-    this.app.get('/*', (res: HttpResponse, req: HttpRequest) => this.handleRequest(req, res));
-    this.app.post('/*', (res: HttpResponse, req: HttpRequest) => this.handleRequest(req, res));
-    this.app.put('/*', (res: HttpResponse, req: HttpRequest) => this.handleRequest(req, res));
-    this.app.del('/*', (res: HttpResponse, req: HttpRequest) => this.handleRequest(req, res));
-    this.app.patch('/*', (res: HttpResponse, req: HttpRequest) => this.handleRequest(req, res));
-    this.app.options('/*', (res: HttpResponse, req: HttpRequest) => this.handleRequest(req, res));
-    this.app.head('/*', (res: HttpResponse, req: HttpRequest) => this.handleRequest(req, res));
-  }
-
   /**
    * Look up the compiled handler for a method+url, checking static routes
    * (O(1)) first, then dynamic routes (regex, in registration order).
@@ -405,20 +359,24 @@ export class BlitzJS {
   }
 
   /**
-   * Main request handler for all incoming HTTP requests.
+   * Runtime-agnostic entry point: every adapter (uws/node/bun/fetch) builds
+   * its own `RuntimeRequest`/`RuntimeResponse` pair from its native
+   * request/response and calls this. Any write-order buffering a runtime
+   * needs (e.g. uWS requiring `writeStatus` first) is the adapter's
+   * responsibility, not the core's.
    *
-   * 1. Captures everything needed from `req` synchronously (uWebSockets.js
-   *    invalidates the request object after the first `await`)
+   * 1. Captures everything needed from `req` synchronously (some runtimes,
+   *    like uWebSockets.js, invalidate the request object after the first
+   *    `await`)
    * 2. Parses the body (POST/PUT/PATCH) and query string
    * 3. Matches the route and runs it through the middleware chain
    */
-  private handleRequest = async (req: HttpRequest, res: HttpResponse): Promise<void> => {
+  async dispatchRuntimeRequest(req: RuntimeRequest, res: RuntimeResponse): Promise<void> {
     const method = req.getMethod().toUpperCase();
     const url = req.getUrl();
     const queryString = req.getQuery();
     const contentType = req.getHeader('content-type') || '';
     const cookieHeader = req.getHeader('cookie') || '';
-    const bufferedRes = bufferResponse(res);
 
     try {
       const query = queryString ? parseQueryString(queryString) : {};
@@ -426,13 +384,13 @@ export class BlitzJS {
 
       const ctx: RouteContext = {
         req,
-        res: bufferedRes,
+        res,
         state: {},
         params: match?.params ?? {},
         query,
         body: undefined,
         cookies: parseCookies(cookieHeader),
-        setCookie: (name, value, options) => bufferedRes.writeHeader('Set-Cookie', serializeCookie(name, value, options))
+        setCookie: (name, value, options) => res.writeHeader('Set-Cookie', serializeCookie(name, value, options))
       };
 
       /**
@@ -443,23 +401,23 @@ export class BlitzJS {
        * preflight, auth, logging) see every request - including ones with
        * no registered route, which a CORS preflight `OPTIONS` typically is.
        * Body parsing happens here, after middlewares, rather than upfront:
-       * it's the only `await` in the pipeline that touches `req`, and
-       * uWebSockets.js invalidates `req` after any await - parsing it
-       * earlier would break any middleware reading `ctx.req` on a
-       * POST/PUT/PATCH request.
+       * it's the only `await` in the pipeline that touches `req`, and some
+       * runtimes invalidate `req` after any await - parsing it earlier
+       * would break any middleware reading `ctx.req` on a POST/PUT/PATCH
+       * request.
        */
       const runFinal = async (): Promise<void> => {
         if (!match) {
           if (!res.aborted) {
-            bufferedRes.writeStatus('404 Not Found');
-            bufferedRes.end('Not Found');
+            res.writeStatus('404 Not Found');
+            res.end('Not Found');
           }
           return;
         }
 
         if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
           try {
-            ctx.body = await parseBody(res, req, contentType);
+            ctx.body = await req.parseBody(contentType);
           } catch (error) {
             console.error('Body parsing error:', error);
             return; // request was aborted mid-body; nothing left to respond to
@@ -471,9 +429,9 @@ export class BlitzJS {
           const issues = await applySchema(match.schema, ctx);
           if (issues.length > 0) {
             if (!res.aborted) {
-              bufferedRes.writeStatus('400 Bad Request');
-              bufferedRes.writeHeader('Content-Type', 'application/json');
-              bufferedRes.end(JSON.stringify({ error: 'Validation Error', issues }));
+              res.writeStatus('400 Bad Request');
+              res.writeHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'Validation Error', issues }));
             }
             return;
           }
@@ -490,11 +448,11 @@ export class BlitzJS {
     } catch (error) {
       console.error('Request handler error:', error);
       if (!res.aborted) {
-        bufferedRes.writeStatus('500 Internal Server Error');
-        bufferedRes.end('Internal Server Error');
+        res.writeStatus('500 Internal Server Error');
+        res.end('Internal Server Error');
       }
     }
-  };
+  }
 }
 
 /**

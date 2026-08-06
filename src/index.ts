@@ -51,5 +51,12 @@ export {
   type ValidatedHandlerFunction
 } from './core/BlitzJS.js';
 
-// Re-export uWebSockets types for advanced users
-export type { HttpRequest, HttpResponse, TemplatedApp, WebSocket, WebSocketBehavior } from 'uWebSockets.js';
+export type { RuntimeRequest, RuntimeResponse } from './core/runtime.js';
+
+// Runtime adapters - uWebSockets.js's adapter is intentionally not re-exported
+// here (importing it eagerly loads a native binary that crashes under Bun);
+// import it directly from '@damienmonchaty/blitzjs/dist/adapters/uws.js' if needed.
+export { serveWithNode, type NodeServeOptions, type NodeLikeServer } from './adapters/node.js';
+export { serveWithBun, type BunServeOptions } from './adapters/bun.js';
+export { createFetchHandler, type FetchDispatchApp } from './adapters/fetch.js';
+export type { FetchHandler, ServeOptions } from './adapters/types.js';
